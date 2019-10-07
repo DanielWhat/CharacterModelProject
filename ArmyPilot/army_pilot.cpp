@@ -14,6 +14,7 @@ struct InitialMesh
 /* This is a data type that stores a meshes, orginal vertex and normal positions */
 {
 	int mNumVertices;
+	bool* seen_before;
 	aiVector3D* mVertices;
 	aiVector3D* mNormals;
 };
@@ -116,18 +117,20 @@ void initialise_transform_vertices(const aiScene* the_scene)
 		initial_meshes[mesh_index].mNumVertices = mesh->mNumVertices;
 		initial_meshes[mesh_index].mVertices = new aiVector3D[mesh->mNumVertices]; //allocate memory to store all the verticies and normals for this mesh
 		initial_meshes[mesh_index].mNormals = new aiVector3D[mesh->mNumVertices];
+		initial_meshes[mesh_index].seen_before = new bool[mesh->mNumVertices];
 
 		//now actually assign the data
 		for (int i = 0; i < mesh->mNumVertices; i++) {
 			initial_meshes[mesh_index].mVertices[i] = mesh->mVertices[i];
 			initial_meshes[mesh_index].mNormals[i] = mesh->mNormals[i];
+			initial_meshes[mesh_index].seen_before[i] = false;
 		}
 	}
 }
 
 
 
-void transform_verticies (const aiScene* the_scene)
+void transform_vertices (const aiScene* the_scene)
 {
 	//This follows closely the methodology in slide 20 Lec. 9
 
@@ -165,15 +168,31 @@ void transform_verticies (const aiScene* the_scene)
 
 			//weights are essentially a struct with the vertex_indicies and the transformation weight for that vertex
 			for (int weight_index = 0; weight_index < bone->mNumWeights; weight_index++) {
-				aiVertexWeight weight = bone->mWeights[weight_index];
+				aiVertexWeight weight_obj = bone->mWeights[weight_index];
 
-				int vertex_index = weight.mVertexId;
+				int vertex_index = weight_obj.mVertexId;
+				float weight = weight_obj.mWeight;
 				aiVector3D vertex = initial_meshes[mesh_index].mVertices[vertex_index];
 				aiVector3D normal = initial_meshes[mesh_index].mNormals[vertex_index];
 
-				mesh->mVertices[vertex_index] = final_transformation_matrix * vertex;
-				mesh->mNormals[vertex_index] = final_transformation_matrix_normals * normal;
+				if (!initial_meshes[mesh_index].seen_before[vertex_index])  {
+					mesh->mVertices[vertex_index] = (final_transformation_matrix * vertex) * weight;
+					mesh->mNormals[vertex_index] = (final_transformation_matrix_normals * normal) * weight;
+					initial_meshes[mesh_index].seen_before[vertex_index] = true;
+
+				} else {
+					mesh->mVertices[vertex_index] += (final_transformation_matrix * vertex) * weight;
+					mesh->mNormals[vertex_index] += (final_transformation_matrix_normals * normal) * weight;
+				}
 			}
+		}
+	}
+
+	//reset the flags for next time
+	for (int mesh_index = 0; mesh_index <  the_scene->mNumMeshes; mesh_index++) {
+		aiMesh* mesh = the_scene->mMeshes[mesh_index];
+		for (int i = 0; i < mesh->mNumVertices; i++) {
+			initial_meshes[mesh_index].seen_before[i] = false;
 		}
 	}
 }
@@ -322,7 +341,7 @@ void display()
 
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-    glRotatef(-90, 0, 1, 0);
+    //glRotatef(-90, 0, 1, 0);
     glRotatef(90, 1, 0, 0);
 
     // scale the whole asset to fit into our view frustum
@@ -338,7 +357,7 @@ void display()
 	// center the model
 	glTranslatef(-xc, -yc, -zc);
 
-	transform_verticies(scene);
+	transform_vertices(scene);
     render(scene, scene->mRootNode);
 
     //glutSolidTeapot(1);
@@ -355,7 +374,7 @@ void loadModel(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	printBoneInfo(scene);
+	//printBoneInfo(scene);
     get_bounding_box(scene, &scene_min, &scene_max);
 	animation_duration = scene->mAnimations[0]->mDuration;
 }
@@ -419,6 +438,15 @@ int main(int argc, char** argv)
     glutCreateWindow("Army Pilot");
     glutInitContextVersion(4, 2);
     glutInitContextProfile(GLUT_CORE_PROFILE);
+
+	aiVector3D test;
+	test.x = 0.3;
+	test.y = 7;
+	test.z = 3;
+
+	test = test * (float)1.0;
+
+	cout << test.x << " " <<  test.y << " " << test.z << endl;
 
     initialise();
     glutDisplayFunc(display);
