@@ -9,15 +9,9 @@
 #include <string>
 using namespace std;
 #include "assimp_extras.h"
+#include "./../initial_meshes.h"
+#include "./../render_scene.h"
 
-struct InitialMesh
-/* This is a data type that stores a meshes, orginal vertex and normal positions */
-{
-	int mNumVertices;
-	bool* seen_before;
-	aiVector3D* mVertices;
-	aiVector3D* mNormals;
-};
 
 InitialMesh* initial_meshes = NULL;
 
@@ -98,35 +92,6 @@ void loadGLTextures(const aiScene* scene)
 	}  //loop for material
 }
 
-
-
-
-void initialise_transform_vertices(const aiScene* the_scene)
-/* Takes a scene and puts the initial meshes into a GLOBAL variable called
- * initial_meshes. <--- @ This is fine for now, but make it work without globals later @ */
-{
-	cout << "There are " << the_scene->mNumMeshes << " meshes in this object." << endl;
-
-	initial_meshes = new InitialMesh[the_scene->mNumMeshes]; //allocate the memory to store the number of meshes we need
-
-	//iterate through each mesh in the scene
-	for (int mesh_index = 0; mesh_index <  the_scene->mNumMeshes; mesh_index++) {
-		aiMesh* mesh = the_scene->mMeshes[mesh_index];
-
-		//for each mesh initialise an entry in the initial_meshes list
-		initial_meshes[mesh_index].mNumVertices = mesh->mNumVertices;
-		initial_meshes[mesh_index].mVertices = new aiVector3D[mesh->mNumVertices]; //allocate memory to store all the verticies and normals for this mesh
-		initial_meshes[mesh_index].mNormals = new aiVector3D[mesh->mNumVertices];
-		initial_meshes[mesh_index].seen_before = new bool[mesh->mNumVertices];
-
-		//now actually assign the data
-		for (int i = 0; i < mesh->mNumVertices; i++) {
-			initial_meshes[mesh_index].mVertices[i] = mesh->mVertices[i];
-			initial_meshes[mesh_index].mNormals[i] = mesh->mNormals[i];
-			initial_meshes[mesh_index].seen_before[i] = false;
-		}
-	}
-}
 
 
 
@@ -233,103 +198,6 @@ void update_node_matrices(int tick)
 
 
 
-void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index)
-/* Draws a mesh when given the scene object, the node object which has the mesh
- * you want to draw, and the mesh index specifying the mesh you want to draw.
- * NOTE: Humans should not be using this function, use render instead */
-{
-    aiMesh* mesh;
-    aiFace* face;
-    aiMaterial* material;
-    aiColor4D diffuse;
-    int mesh_index, material_index;
-
-    mesh_index = node->mMeshes[node_index]; //get the mesh index for this mesh
-    mesh = the_scene->mMeshes[mesh_index];  //get the actual meshes
-
-    material_index = mesh->mMaterialIndex;  //get the material index assigned to the mesh
-    material = the_scene->mMaterials[material_index];  //now get the actual material object using the material index
-
-    //try to get the material, and put the material into diffuse
-    if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse)) {
-        glColor4f(diffuse.r, diffuse.g, diffuse.b, 1);
-    } else {
-        glColor4fv(blue); //default colour
-    }
-
-    //now actually draw the mesh's polygons
-    for (int face_index = 0; face_index < mesh->mNumFaces; face_index++) {
-        face = &mesh->mFaces[face_index];
-        GLenum face_mode;
-
-        //select a different face mode, depending on the number of indices the face has
-        switch(face->mNumIndices) {
-            case 1: face_mode = GL_POINTS; break;
-            case 2: face_mode = GL_LINES; break;
-            case 3: face_mode = GL_TRIANGLES; break;
-            default: face_mode = GL_POLYGON; break;
-        }
-
-        if (mesh->HasTextureCoords(0)) {
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, texIdMap[material_index]); //the material index associated with a mesh relates to the
-		}
-
-        //draw the actual polygons that form the mesh
-        glBegin(face_mode);
-            for (int i = 0; i < face->mNumIndices; i++) {
-                int vertex_index = face->mIndices[i];
-
-                //if there is a colour assigned to this vertex use it
-                if (mesh->HasVertexColors(0)) {
-                    glColor4fv((GLfloat*) &mesh->mColors[0][vertex_index]);
-                }
-
-                if (mesh->HasTextureCoords(0)) {
-					glTexCoord2f(mesh->mTextureCoords[0][vertex_index].x, mesh->mTextureCoords[0][vertex_index].y);
-				}
-
-                //the mesh has vertex normals then use them
-                if (mesh->HasNormals()) {
-                    glNormal3fv(&mesh->mNormals[vertex_index].x);
-                }
-
-                glVertex3fv(&mesh->mVertices[vertex_index].x); //draw the ctual face vertex
-            }
-        glEnd();
-    }
-}
-
-
-
-
-
-
-void render (const aiScene* the_scene, const aiNode* node)
-/* Traverses the scene graph (which starts at Node), and draws each mesh.
- * NOTE: Uses legacy OpenGL functions such as PushMatrix() */
-{
-    aiMatrix4x4 matrix = node->mTransformation;
-
-    aiTransposeMatrix4(&matrix); //assimp uses row-major ordering, whereas openGL uses column major ordering, so we need to convert the assimp matrix to column major
-    glPushMatrix();
-        glMultMatrixf((float*)&matrix); //multiply by the transformation matrix corresponding to this Node
-
-        //draw the meshes assigned to this node (note: we are not drawing child nodes here, only meshes assigned to this node)
-        for (int node_index = 0; node_index < node->mNumMeshes; node_index++) {
-            draw_mesh(the_scene, node, node_index);
-        }
-        //recursively draw all of this node's children
-        for (int i = 0; i < node->mNumChildren; i++) {
-            render(the_scene, node->mChildren[i]);
-        }
-
-    glPopMatrix();
-}
-
-
-
-
 void display()
 {
     float light_position[4] = {0, 50, 50, 1};
@@ -358,7 +226,7 @@ void display()
 	glTranslatef(-xc, -yc, -zc);
 
 	transform_vertices(scene);
-    render(scene, scene->mRootNode);
+    render(scene, scene->mRootNode, texIdMap);
 
     //glutSolidTeapot(1);
 
@@ -420,7 +288,7 @@ void initialise()
 
     loadModel("ArmyPilot.x");
     loadGLTextures(scene);
-	initialise_transform_vertices(scene);
+	initial_meshes = initialise_transform_vertices(scene);
 
     //set up the projection matrix
     glMatrixMode(GL_PROJECTION);
