@@ -31,11 +31,12 @@ std::map<int, int>texIdMap;
 float kek = 3;
 
 //animation globals
-int animation_duration;
+int animation_duration1;
+int animation_duration2;
 int desired_animation_duration = 200;
-int duration_factor = 1;
+float duration_factor = 1;
 int current_tick = 1;
-float time_step = 25;
+float time_step = 50;
 
 
 
@@ -212,57 +213,6 @@ void update_node_matrices(int tick, aiAnimation* anim)
 
 
 	for (int i = 0; i < anim->mNumChannels; i++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
-		/*position_matrix = aiMatrix4x4(); //Identity matrix
-		rotation_matrix = aiMatrix4x4();
-		aiNodeAnim* channel = anim->mChannels[i];
-
-		//find the index i corresponding to our tick/time value
-		for (int i = 1; i < channel->mNumPositionKeys; i++) {
-			if (channel->mPositionKeys[i-1].mTime < tick <= channel->mPositionKeys[i].mTime) {
-				index = i;
-			}
-		}
-
-		//get the two position matricies we need to interpolate between
-		aiVector3D position1 = (channel->mPositionKeys[index-1]).mValue;
-		position_matrix.Translation(position1, position_matrix); //weird function, but this just says that position matrix should become a translation to "position"
-
-		aiVector3D position2 = (channel->mPositionKeys[index]).mValue;
-		position_matrix2.Translation(position2, position_matrix2);
-
-		//now actually interpolate between them
-		float time1 =  (channel->mPositionKeys[index-1]).mTime;
-		float time2 = (channel->mPositionKeys[index]).mTime;
-		float lambda = (tick - time1) / (time2 - time1); //takes takes value 0 if tick = time1 and value 1 if tick = time2
-		position_matrix = (1 - lambda) * position_matrix1 + lambda * position_matrix2;
-
-
-		//find the index i corresponding to our tick/time value
-		for (int i = 1; i < channel->mNumRotationKeys; i++) {
-			if (channel->mRotationKeys[i-1].mTime < tick <= channel->mRotationKeys[i].mTime) {
-				index = i;
-			}
-		}
-
-		//get the two rotation quaternions we need to interpolate between
-		aiQuaternion rotation1 = (channel->mRotationKeys[index-1]).mValue;
-		float time1 =  (channel->mRotationKeys[index-1]).mTime;
-
-		aiQuaternion rotation2 = (channel->mRotationKeys[index]).mValue;
-		float time2 = (channel->mRotationKeys[index]).mTime;
-
-		float lambda = (tick - time1) / (time2 - time1); //takes takes value 0 if tick = time1 and value 1 if tick = time2
-		aiQuaternion rotation;
-		rotation.Interpolate(rotation, rotation1, rotation2, lambda);
-
-		rotation_matrix3 = rotation.GetMatrix();
-		rotation_matrix = aiMatrix4x4(rotation_matrix3);
-
-		final_transformation_matrix = position_matrix * rotation_matrix;
-
-		node = scene->mRootNode->FindNode(channel->mNodeName); //get the node/mesh corresponding to this channel
-		node->mTransformation = final_transformation_matrix; //remember that position_matrix is the offset matrix, so we are actually only changing the rotation
-		*/
 
 		position_matrix = aiMatrix4x4(); //Identity matrix
 		rotation_matrix = aiMatrix4x4();
@@ -306,6 +256,105 @@ void update_node_matrices(int tick, aiAnimation* anim)
 		final_transformation_matrix = position_matrix * rotation_matrix;
 
 		node = scene->mRootNode->FindNode(channel->mNodeName);
+
+		//cout << channel->mNodeName.C_Str() << endl;
+		/*if (string(channel->mNodeName.C_Str()) == "rknee") {
+			cout << "hello?" << endl;
+			final_transformation_matrix = aiMatrix4x4();
+		}*/
+
+		node->mTransformation = final_transformation_matrix;
+	}
+}
+
+
+void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation* anim1)
+{
+	int index;
+	aiMatrix4x4 position_matrix, position_matrix1, position_matrix2, rotation_matrix, final_transformation_matrix;
+	aiMatrix3x3 rotation_matrix3;
+	aiNode* node;
+
+
+	for (int i = 0; i < anim->mNumChannels; i++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
+
+		position_matrix = aiMatrix4x4(); //Identity matrix
+		rotation_matrix = aiMatrix4x4();
+		aiNodeAnim* original_channel = anim->mChannels[i];
+		aiNodeAnim* retarget_channel = original_channel;
+
+		duration_factor = 1;
+		if (string(original_channel->mNodeName.C_Str()) == "rknee") {
+			retarget_channel = anim1->mChannels[19];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		} else if (string(original_channel->mNodeName.C_Str()) == "rankle") {
+			retarget_channel = anim1->mChannels[20];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		} else if (string(original_channel->mNodeName.C_Str()) == "rhip") {
+			retarget_channel = anim1->mChannels[18];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		} else if (string(original_channel->mNodeName.C_Str()) == "lknee") {
+			retarget_channel = anim1->mChannels[16];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		} else if (string(original_channel->mNodeName.C_Str()) == "lankle") {
+			retarget_channel = anim1->mChannels[17];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		} else if (string(original_channel->mNodeName.C_Str()) == "lhip") {
+			retarget_channel = anim1->mChannels[15];
+			//cout << retarget_channel->mNumRotationKeys << endl;
+			duration_factor = anim->mDuration / (float)anim1->mDuration;
+
+		}
+
+		index = 0;
+		aiVector3D position = (original_channel->mPositionKeys[index]).mValue; //use original channel's position values
+		position_matrix.Translation(position, position_matrix);
+
+
+		index = (retarget_channel->mNumRotationKeys > 1) ? tick : 0;
+		aiQuaternion rotation;
+
+
+
+		//make sure we actually have atleast two rotation keys
+		if (index != 0) {
+			for (int i = 1; i < retarget_channel->mNumRotationKeys; i++) {
+				if (retarget_channel->mRotationKeys[i-1].mTime * duration_factor < tick && tick <= retarget_channel->mRotationKeys[i].mTime * duration_factor) {
+					index = i;
+				}
+			}
+
+			//get the two rotation quaternions we need to interpolate between
+			aiQuaternion rotation1 = (retarget_channel->mRotationKeys[index-1]).mValue;
+			float time1 = (retarget_channel->mRotationKeys[index-1]).mTime * duration_factor;
+
+			aiQuaternion rotation2 = (retarget_channel->mRotationKeys[index]).mValue;
+			float time2 = (retarget_channel->mRotationKeys[index]).mTime * duration_factor;
+
+			float lambda = (tick - time1) / (time2 - time1); //takes takes value 0 if tick = time1 and value 1 if tick = time2
+
+			rotation.Interpolate(rotation, rotation1, rotation2, lambda);
+		}
+
+
+
+
+		rotation_matrix3 = rotation.GetMatrix();
+		rotation_matrix = aiMatrix4x4(rotation_matrix3);
+
+		final_transformation_matrix = position_matrix * rotation_matrix;
+
+		node = scene->mRootNode->FindNode(original_channel->mNodeName);
 		node->mTransformation = final_transformation_matrix;
 	}
 }
@@ -463,8 +512,8 @@ void loadModel(const char* filename)
 	//printBoneInfo(scene);
 	printAnimInfo(scene);
     get_bounding_box(scene, &scene_min, &scene_max);
-	animation_duration = scene->mAnimations[0]->mDuration;
-	duration_factor = (float)desired_animation_duration / animation_duration;
+	animation_duration1 = scene->mAnimations[0]->mDuration;
+	//duration_factor = (float)desired_animation_duration / animation_duration;
 }
 
 
@@ -479,20 +528,21 @@ void load_animation(const char* filename)
 	printMeshInfo(animation);
 	printAnimInfo(animation);
     //get_bounding_box(scene, &scene_min, &scene_max);
-	animation_duration = animation->mAnimations[0]->mDuration;
-	duration_factor = (float)desired_animation_duration / animation_duration;
+	animation_duration2 = animation->mAnimations[0]->mDuration;
+	//duration_factor = (float)desired_animation_duration / animation_duration;
 }
 
 
 void update_animation (int value)
 {
-	if (current_tick < animation_duration * duration_factor) {
-		update_node_matrices(current_tick, scene->mAnimations[0]);
+	if (current_tick < animation_duration1 * duration_factor) {
+		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
 		glutTimerFunc(time_step, update_animation, 0);
 		current_tick++;
 	} else {
 		current_tick = 1;
-		update_node_matrices(current_tick, scene->mAnimations[0]);
+		//update_node_matrices(current_tick, scene->mAnimations[0]);
+		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
 		glutTimerFunc(time_step, update_animation, 0);
 	}
 	glutPostRedisplay();
@@ -523,7 +573,7 @@ void initialise()
     glColor4f(0, 0, 0, 1); //use blue as the default colour
 
     loadModel("dwarf.x");
-	//load_animation("run.fbx");
+	load_animation("avatar_walk.bvh");
     loadGLTextures(scene);
 	initialise_transform_vertices(scene);
 
