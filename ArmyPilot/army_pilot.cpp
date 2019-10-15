@@ -27,6 +27,14 @@ int animation_duration;
 int current_tick = 0;
 float time_step = 30;
 
+float distance_x = 0;
+float radius = 3;
+float angle = 0;
+
+//colours
+const float white[4] = {1, 1, 1, 1};
+const float black[4] = {0, 0, 0, 1};
+
 
 
 //-------------Loads texture files using DevIL library-------------------------------
@@ -93,6 +101,31 @@ void loadGLTextures(const aiScene* scene)
 }
 
 
+void draw_floor_plane(float square_size, int num_squares_x, int num_squares_z)
+/* Takes a square size float, the number of squares in the x direction, and the
+ * number of squares in the z direction. Draws a floor plane along the x,z axes */
+{
+	glPushMatrix();
+		glTranslatef(-(num_squares_x*square_size)/2, 0, -(num_squares_z*square_size)/2);
+		glBegin(GL_QUADS);
+			for (int i = 0; i < num_squares_x; i++) {
+				for (int j = 0; j < num_squares_z; j++) {
+					if ((i + j) % 2 == 0) {
+						glColor3f(0.9, 0, 0.9);
+					} else {
+						glColor3f(0, 0.9, 0.9);
+					}
+					glNormal3f(0, 1, 0);
+					glVertex3f(square_size*i, 0, square_size*j);
+					glVertex3f(square_size*(i+1), 0, square_size*j);
+					glVertex3f(square_size*(i+1), 0, square_size*(j+1));
+					glVertex3f(square_size*(i), 0, square_size*(j+1));
+				}
+			}
+		glEnd();
+	glPopMatrix();
+}
+
 
 
 void transform_vertices (const aiScene* the_scene)
@@ -154,12 +187,7 @@ void transform_vertices (const aiScene* the_scene)
 	}
 
 	//reset the flags for next time
-	for (int mesh_index = 0; mesh_index <  the_scene->mNumMeshes; mesh_index++) {
-		aiMesh* mesh = the_scene->mMeshes[mesh_index];
-		for (int i = 0; i < mesh->mNumVertices; i++) {
-			initial_meshes[mesh_index].seen_before[i] = false;
-		}
-	}
+	clear_flags(initial_meshes, the_scene->mNumMeshes);
 }
 
 
@@ -197,38 +225,60 @@ void update_node_matrices(int tick)
 
 
 
+void draw_army_pilot()
+{
+	glPushMatrix();
+		// scale the whole asset to fit into our view frustum
+		float tmp = scene_max.x - scene_min.x;
+		tmp = aisgl_max(scene_max.y - scene_min.y,tmp);
+		tmp = aisgl_max(scene_max.z - scene_min.z,tmp);
+		tmp = 1.f / tmp;
+
+		glScalef(tmp, tmp, tmp);
+
+	    float xc = (scene_min.x + scene_max.x)*0.5;
+		float yc = (scene_min.y + scene_max.y)*0.5;
+		float zc = (scene_min.z + scene_max.z)*0.5;
+		// center the model
+		glTranslatef(-xc, -yc, -zc);
+
+		transform_vertices(scene);
+	    render(scene, scene->mRootNode, texIdMap);
+	glPopMatrix();
+}
+
+
+
 
 void display()
 {
-    float light_position[4] = {0, 50, 50, 1};
+	float character_mid_point_height = 0.36;
+    float light_position[4] = {0, 4, 20, 1};
+	float look_point[3] = {0, character_mid_point_height + (float)0.2, 0};
+	float camera_point[3] = {0, 1, radius};
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //clear the depth and colour buffers
 
 	glMatrixMode(GL_MODELVIEW); //tell openGL we are talking about the model-view matrix now
 	glLoadIdentity();
-	gluLookAt(0, 0, 3, 0, 0, -5, 0, 1, 0); //specify camera position
+	gluLookAt(-sin(angle * (M_PI / 180))*camera_point[2] + distance_x, camera_point[1], cos(angle * (M_PI / 180)) * camera_point[2], look_point[0] + distance_x, look_point[1], look_point[2], 0, 1, 0); //specify camera position
 
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-    //glRotatef(-90, 0, 1, 0);
-    glRotatef(90, 1, 0, 0);
+	glDisable(GL_TEXTURE_2D);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
+	draw_floor_plane(0.5, 150, 50);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, white);
+	glEnable(GL_TEXTURE_2D);
 
-    // scale the whole asset to fit into our view frustum
-	float tmp = scene_max.x - scene_min.x;
-	tmp = aisgl_max(scene_max.y - scene_min.y,tmp);
-	tmp = aisgl_max(scene_max.z - scene_min.z,tmp);
-	tmp = 1.f / tmp;
-	glScalef(tmp, tmp, tmp);
+	//draw the floor plane
+    glTranslatef(distance_x, character_mid_point_height, 0);
+	glTranslatef(0.33, 0, 0);
+	glRotatef(-14, 0, 0, 1);
+    glRotatef(95, 1, 0, 0);
 
-    float xc = (scene_min.x + scene_max.x)*0.5;
-	float yc = (scene_min.y + scene_max.y)*0.5;
-	float zc = (scene_min.z + scene_max.z)*0.5;
-	// center the model
-	glTranslatef(-xc, -yc, -zc);
-
-	transform_vertices(scene);
-    render(scene, scene->mRootNode, texIdMap);
-
-    //glutSolidTeapot(1);
+	//draw the model
+	draw_army_pilot();
 
     glutSwapBuffers();
 }
@@ -259,7 +309,23 @@ void update_animation (int value)
 		update_node_matrices(current_tick);
 		glutTimerFunc(time_step, update_animation, 0);
 	}
+	distance_x += 0.02;
 	glutPostRedisplay();
+}
+
+
+void move_camera(int key, int x, int y)
+{
+	if (key == GLUT_KEY_UP) {
+		radius -= 0.2;
+	} else if (key == GLUT_KEY_DOWN) {
+		radius += 0.2;
+	} else if (key == GLUT_KEY_RIGHT) {
+		angle += 2;
+	} else if (key == GLUT_KEY_LEFT) {
+		angle -= 2;
+	}
+	//glutPostRedisplay(); No need for this, will just update with the animation
 }
 
 
@@ -267,7 +333,6 @@ void update_animation (int value)
 void initialise()
 {
     const float light_ambient[4] = {0.2, 0.2, 0.2, 1.0}; //ambient light's colour
-    const float white[4] = {1, 1, 1, 1}; //light's colour
 
     glClearColor(1, 1, 1, 1); //se background colour to white
     glEnable(GL_LIGHTING);
@@ -307,18 +372,10 @@ int main(int argc, char** argv)
     glutInitContextVersion(4, 2);
     glutInitContextProfile(GLUT_CORE_PROFILE);
 
-	aiVector3D test;
-	test.x = 0.3;
-	test.y = 7;
-	test.z = 3;
-
-	test = test * (float)1.0;
-
-	cout << test.x << " " <<  test.y << " " << test.z << endl;
-
     initialise();
     glutDisplayFunc(display);
 	glutTimerFunc(50, update_animation, 0);
+	glutSpecialFunc(move_camera);
     glutMainLoop();
     aiReleaseImport(scene);
 }

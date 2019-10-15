@@ -1,6 +1,18 @@
 #include "initial_meshes.h"
 
 
+void clear_flags(InitialMesh*& meshes, int num_meshes)
+/* Takes a reference to a list of initial meshes and the number of elements in
+ * the list. Then clears all the flags in the list */
+{
+	for (int mesh_index = 0; mesh_index < num_meshes; mesh_index++) {
+		for (int i = 0; i < meshes[mesh_index].mNumVertices; i++) {
+			meshes[mesh_index].seen_before[i] = false;     
+		}
+	}
+}
+
+
 InitialMesh* initialise_transform_vertices(const aiScene* the_scene)
 /* Takes a scene and returns the initial mesh data in a list*/
 {
@@ -23,7 +35,6 @@ InitialMesh* initialise_transform_vertices(const aiScene* the_scene)
 			meshes[mesh_index].seen_before[i] = false;
 		}
 	}
-	
+
 	return meshes;
 }
-
