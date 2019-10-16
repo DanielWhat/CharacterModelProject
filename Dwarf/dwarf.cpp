@@ -456,9 +456,9 @@ void move_camera(int key, int x, int y)
 	} else if (key == GLUT_KEY_DOWN) {
 		radius += 0.2;
 	} else if (key == GLUT_KEY_RIGHT) {
-		angle += 2;
-	} else if (key == GLUT_KEY_LEFT) {
 		angle -= 2;
+	} else if (key == GLUT_KEY_LEFT) {
+		angle += 2;
 	}
 	//glutPostRedisplay(); No need for this, will just update with the animation
 }

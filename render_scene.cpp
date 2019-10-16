@@ -2,13 +2,14 @@
 
 
 
-void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index, std::map<int, int> texture_id_map)
+void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index, std::map<int, int> texture_id_map, bool is_shadow)
 /* Draws a mesh when given the scene object, the node object which has the mesh
- * you want to draw, the mesh index specifying the mesh you want to draw, and a 
- * texture ID map mapping material indexes to texture IDs.
- * 
+ * you want to draw, the mesh index specifying the mesh you want to draw, and a
+ * texture ID map mapping material indexes to texture IDs. If is_shadow is true,
+ * then will draw a black mesh.
+ *
  * NOTE: Humans should not be using this function, use render instead */
-{	
+{
 	float blue[] = {0, 0, 1, 1};
     aiMesh* mesh;
     aiFace* face;
@@ -23,9 +24,11 @@ void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index, std
     material = the_scene->mMaterials[material_index];  //now get the actual material object using the material index
 
     //try to get the material, and put the material into diffuse
-    if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse)) {
+    if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse) && !is_shadow) {
         glColor4f(diffuse.r, diffuse.g, diffuse.b, 1);
-    } else {
+    } else if (is_shadow) {
+		glColor3f(0.2, 0.2, 0.2);
+	} else {
         glColor4fv(blue); //default colour
     }
 
@@ -77,12 +80,12 @@ void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index, std
 
 
 
-void render (const aiScene* the_scene, const aiNode* node, std::map<int, int> texIdMap)
-/* Traverses the scene graph (which starts at Node), and draws each mesh. 
- * Requires a texture ID map mapping each material index to the 
- * corresponding texture ID. If no textures are available then simply 
- * provide an empty map. 
- * 
+void render (const aiScene* the_scene, const aiNode* node, std::map<int, int> texIdMap, bool is_shadow)
+/* Traverses the scene graph (which starts at Node), and draws each mesh.
+ * Requires a texture ID map mapping each material index to the
+ * corresponding texture ID. If no textures are available then simply
+ * provide an empty map.
+ *
  * NOTE: Uses legacy OpenGL functions such as PushMatrix() */
 {
     aiMatrix4x4 matrix = node->mTransformation;
@@ -93,11 +96,11 @@ void render (const aiScene* the_scene, const aiNode* node, std::map<int, int> te
 
         //draw the meshes assigned to this node (note: we are not drawing child nodes here, only meshes assigned to this node)
         for (int node_index = 0; node_index < node->mNumMeshes; node_index++) {
-            draw_mesh(the_scene, node, node_index, texIdMap);
+            draw_mesh(the_scene, node, node_index, texIdMap, is_shadow);
         }
         //recursively draw all of this node's children
         for (int i = 0; i < node->mNumChildren; i++) {
-            render(the_scene, node->mChildren[i], texIdMap);
+            render(the_scene, node->mChildren[i], texIdMap, is_shadow);
         }
 
     glPopMatrix();

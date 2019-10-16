@@ -22,7 +22,9 @@ aiVector3D scene_min, scene_max, scene_center;
 
 std::map<int, int>texIdMap;
 
-float kek = 3;
+//colours
+const float light_ambient[4] = {0.2, 0.2, 0.2, 1.0}; //ambient light's colour
+const float white[4] = {1, 1, 1, 1}; //light's colour
 
 //animation globals
 int animation_duration;
@@ -207,7 +209,8 @@ void update_node_matrices(float tick, aiAnimation* anim)
 		rotation_matrix3 = rotation.GetMatrix();
 		rotation_matrix = aiMatrix4x4(rotation_matrix3);
 
-		if (channel_index != 23) {
+		if (channel_index
+			 != 23) {
 			final_transformation_matrix = position_matrix * rotation_matrix;
 		} else {
 			final_transformation_matrix = rotation_matrix;
@@ -219,7 +222,7 @@ void update_node_matrices(float tick, aiAnimation* anim)
 }
 
 
-void draw_mannequin()
+void draw_mannequin(bool is_shadow)
 {
 	glPushMatrix();
 		// scale the whole asset to fit into our view frustum
@@ -236,7 +239,7 @@ void draw_mannequin()
 		glTranslatef(-xc, -yc, -zc);
 
 		transform_vertices(scene);
-		render(scene, scene->mRootNode, texIdMap);
+		render(scene, scene->mRootNode, texIdMap, is_shadow);
 	glPopMatrix();
 }
 
@@ -249,6 +252,11 @@ void display()
     float light_position[4] = {0, 50, 50, 1};
 	float look_point[3] = {0, character_mid_point_height + (float)0.2, 0};
 	float camera_point[3] = {0, 1, radius};
+	float shadow_matrix[16] = {light_position[1], 0,                  0,                 0,
+							  -light_position[0], 0, -light_position[2],                 0,
+						  	                   0, 0,  light_position[1],                 0,
+										       0, 0,                  0, light_position[1]};
+
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //clear the depth and colour buffers
 
@@ -258,14 +266,31 @@ void display()
 
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
+	//draw floor plane
 	glPushMatrix();
 		glTranslatef(0.5*100*0.5, 0, 0);
 		draw_floor_plane(0.5, 100, 10);
 	glPopMatrix();
 
-	glTranslatef(distance_x, character_mid_point_height, 0);
-	glRotatef(90, 0, 1, 0);
-	draw_mannequin();
+	//draw character
+	glPushMatrix();
+		glTranslatef(distance_x, character_mid_point_height, 0);
+		glTranslatef(-0.2, 0, 0);
+		glRotatef(90, 0, 1, 0);
+		draw_mannequin(false);
+	glPopMatrix();
+
+	//draw shadow
+	glDisable(GL_LIGHTING);
+	glPushMatrix();
+		glTranslatef(distance_x, 0.01, 0);
+		glTranslatef(-0.2, 0, 0);
+		glMultMatrixf(shadow_matrix);
+		glTranslatef(0, character_mid_point_height, 0);
+		glRotatef(90, 0, 1, 0);
+		draw_mannequin(true);
+	glPopMatrix();
+	glEnable(GL_LIGHTING);
 
     glutSwapBuffers();
 }
@@ -291,7 +316,6 @@ void load_animation(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	printAnimInfo(animation);
 	animation_duration = animation->mAnimations[0]->mDuration;
 }
 
@@ -315,9 +339,6 @@ void update_animation (int value)
 
 void initialise()
 {
-    const float light_ambient[4] = {0.2, 0.2, 0.2, 1.0}; //ambient light's colour
-    const float white[4] = {1, 1, 1, 1}; //light's colour
-
     glClearColor(1, 1, 1, 1); //se background colour to white
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
@@ -347,17 +368,6 @@ void initialise()
 }
 
 
-void test(unsigned char key, int x, int y)
-{
-    if (key == 'w') {
-        kek += 0.1;
-    } else if (key == 's') {
-        kek -= 0.1;
-    }
-    glutPostRedisplay();
-}
-
-
 void move_camera(int key, int x, int y)
 {
 	if (key == GLUT_KEY_UP) {
@@ -365,9 +375,9 @@ void move_camera(int key, int x, int y)
 	} else if (key == GLUT_KEY_DOWN) {
 		radius += 0.2;
 	} else if (key == GLUT_KEY_RIGHT) {
-		angle += 2;
-	} else if (key == GLUT_KEY_LEFT) {
 		angle -= 2;
+	} else if (key == GLUT_KEY_LEFT) {
+		angle += 2;
 	}
 	//glutPostRedisplay(); No need for this, will just update with the animation
 }
@@ -384,7 +394,6 @@ int main(int argc, char** argv)
 
     initialise();
     glutDisplayFunc(display);
-    glutKeyboardFunc(test);
 	glutTimerFunc(50, update_animation, 0);
 	glutSpecialFunc(move_camera);
     glutMainLoop();
