@@ -8,16 +8,14 @@
 #include <iostream>
 #include <string>
 using namespace std;
-#include "assimp_extras.h"
+#include "./../assimp_extras.h"
+#include "./../floor_plane.h"
+#include "./../render_scene.h"
+#include "./../initial_meshes.h"
 
-struct InitialMesh
-/* This is a data type that stores a meshes, orginal vertex and normal positions */
-{
-	int mNumVertices;
-	bool* seen_before;
-	aiVector3D* mVertices;
-	aiVector3D* mNormals;
-};
+//colours
+const float white[4] = {1, 1, 1, 1};
+const float black[4] = {0, 0, 0, 1};
 
 InitialMesh* initial_meshes = NULL;
 
@@ -28,8 +26,6 @@ aiVector3D scene_min, scene_max, scene_center;
 
 std::map<int, int>texIdMap;
 
-float kek = 3;
-
 //animation globals
 int animation_duration1;
 int animation_duration2;
@@ -37,7 +33,12 @@ int desired_animation_duration = 200;
 float duration_factor = 1;
 int current_tick = 1;
 float time_step = 50;
+bool is_retarget_enabled = true;
 
+//viewing stuff
+float radius = 3;
+int angle = 0;
+float distance_x = 0;
 
 
 //-------------Loads texture files using DevIL library-------------------------------
@@ -50,13 +51,6 @@ void loadGLTextures(const aiScene* scene)
 		std::cout << "Support for meshes with embedded textures is not implemented" << endl;
 		return;
 	}
-
-	/* scan scene's materials for textures */
-	/* Simplified version: Retrieves only the first texture with index 0 if present*/
-    //string head = "./head01.png";
-    //string body = "./body01.png";
-    //string m4 = "./m4tex.png";
-    //string paths[3] = {head, body, m4};
 
 	for (unsigned int m = 0; m < scene->mNumMaterials; ++m)
 	{
@@ -101,36 +95,6 @@ void loadGLTextures(const aiScene* scene)
 			}
 		}
 	}  //loop for material
-}
-
-
-
-
-void initialise_transform_vertices(const aiScene* the_scene)
-/* Takes a scene and puts the initial meshes into a GLOBAL variable called
- * initial_meshes. <--- @ This is fine for now, but make it work without globals later @ */
-{
-	cout << "There are " << the_scene->mNumMeshes << " meshes in this object." << endl;
-
-	initial_meshes = new InitialMesh[the_scene->mNumMeshes]; //allocate the memory to store the number of meshes we need
-
-	//iterate through each mesh in the scene
-	for (int mesh_index = 0; mesh_index <  the_scene->mNumMeshes; mesh_index++) {
-		aiMesh* mesh = the_scene->mMeshes[mesh_index];
-
-		//for each mesh initialise an entry in the initial_meshes list
-		initial_meshes[mesh_index].mNumVertices = mesh->mNumVertices;
-		initial_meshes[mesh_index].mVertices = new aiVector3D[mesh->mNumVertices]; //allocate memory to store all the verticies and normals for this mesh
-		initial_meshes[mesh_index].mNormals = new aiVector3D[mesh->mNumVertices];
-		initial_meshes[mesh_index].seen_before = new bool[mesh->mNumVertices];
-
-		//now actually assign the data
-		for (int i = 0; i < mesh->mNumVertices; i++) {
-			initial_meshes[mesh_index].mVertices[i] = mesh->mVertices[i];
-			initial_meshes[mesh_index].mNormals[i] = mesh->mNormals[i];
-			initial_meshes[mesh_index].seen_before[i] = false;
-		}
-	}
 }
 
 
@@ -192,18 +156,11 @@ void transform_vertices (const aiScene* the_scene)
 			}
 		}
 	}
-
 	//reset the flags for next time
-	for (int mesh_index = 0; mesh_index <  the_scene->mNumMeshes; mesh_index++) {
-		aiMesh* mesh = the_scene->mMeshes[mesh_index];
-		for (int i = 0; i < mesh->mNumVertices; i++) {
-			initial_meshes[mesh_index].seen_before[i] = false;
-		}
-	}
+	clear_flags(initial_meshes, the_scene->mNumMeshes);
 }
 
 
-//@copy this over properly
 void update_node_matrices(int tick, aiAnimation* anim)
 {
 	int index;
@@ -212,21 +169,17 @@ void update_node_matrices(int tick, aiAnimation* anim)
 	aiNode* node;
 
 
-	for (int i = 0; i < anim->mNumChannels; i++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
+	for (int channel_index = 0; channel_index < anim->mNumChannels; channel_index++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
 
 		position_matrix = aiMatrix4x4(); //Identity matrix
 		rotation_matrix = aiMatrix4x4();
-		aiNodeAnim* channel = anim->mChannels[i];
+		aiNodeAnim* channel = anim->mChannels[channel_index];
 
 		index = 0;
-		aiVector3D position = (channel->mPositionKeys[index]).mValue;
-		position_matrix.Translation(position, position_matrix);
 
-
+		// ****************** ROTATION STUFF ****************
 		index = (channel->mNumRotationKeys > 1) ? tick : 0;
-		aiQuaternion rotation;
-
-
+		aiQuaternion rotation = channel->mRotationKeys[index].mValue;
 
 		//make sure we actually have atleast two rotation keys
 		if (index != 0) {
@@ -247,25 +200,37 @@ void update_node_matrices(int tick, aiAnimation* anim)
 			rotation.Interpolate(rotation, rotation1, rotation2, lambda);
 		}
 
-
-
-
 		rotation_matrix3 = rotation.GetMatrix();
 		rotation_matrix = aiMatrix4x4(rotation_matrix3);
+
+
+		//******************** TRANSLATION STUFF *******************
+		index = (channel->mNumPositionKeys > 1) ? tick : 0;
+		aiVector3D position = (channel->mPositionKeys[index]).mValue;
+
+		if (index != 0) {
+			for (int i = 1; i < channel->mNumPositionKeys; i++) {
+				if (channel->mPositionKeys[i-1].mTime * duration_factor < tick && tick <= channel->mPositionKeys[i].mTime * duration_factor) {
+					index = i;
+				}
+			}
+
+			float time1 = (channel->mPositionKeys[index-1]).mTime * duration_factor;
+			float time2 = (channel->mPositionKeys[index]).mTime * duration_factor;
+
+			float lambda = (tick - time1) / (time2 - time1); //takes takes value 0 if tick = time1 and value 1 if tick = time2
+			position = (lambda) * (channel->mPositionKeys[index]).mValue + (1 - lambda) * (channel->mPositionKeys[index-1]).mValue;
+		}
+
+		position_matrix.Translation(position, position_matrix);
 
 		final_transformation_matrix = position_matrix * rotation_matrix;
 
 		node = scene->mRootNode->FindNode(channel->mNodeName);
-
-		//cout << channel->mNodeName.C_Str() << endl;
-		/*if (string(channel->mNodeName.C_Str()) == "rknee") {
-			cout << "hello?" << endl;
-			final_transformation_matrix = aiMatrix4x4();
-		}*/
-
 		node->mTransformation = final_transformation_matrix;
 	}
 }
+
 
 
 void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation* anim1)
@@ -276,44 +241,45 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 	aiNode* node;
 
 
-	for (int i = 0; i < anim->mNumChannels; i++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
+	for (int channel_index = 0; channel_index < anim->mNumChannels; channel_index++) {      //remember that we have a channel for each node (i.e forearm, hand, shoulder etc.)
 
 		position_matrix = aiMatrix4x4(); //Identity matrix
 		rotation_matrix = aiMatrix4x4();
-		aiNodeAnim* original_channel = anim->mChannels[i];
+		aiNodeAnim* original_channel = anim->mChannels[channel_index];
 		aiNodeAnim* retarget_channel = original_channel;
 
 		duration_factor = 1;
+		bool is_retarget_limb = false;
+		int animation_smoother = 0;
+
 		if (string(original_channel->mNodeName.C_Str()) == "rknee") {
 			retarget_channel = anim1->mChannels[19];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
 
 		} else if (string(original_channel->mNodeName.C_Str()) == "rankle") {
 			retarget_channel = anim1->mChannels[20];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
 
 		} else if (string(original_channel->mNodeName.C_Str()) == "rhip") {
 			retarget_channel = anim1->mChannels[18];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
 
 		} else if (string(original_channel->mNodeName.C_Str()) == "lknee") {
 			retarget_channel = anim1->mChannels[16];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
 
 		} else if (string(original_channel->mNodeName.C_Str()) == "lankle") {
 			retarget_channel = anim1->mChannels[17];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
 
 		} else if (string(original_channel->mNodeName.C_Str()) == "lhip") {
 			retarget_channel = anim1->mChannels[15];
-			//cout << retarget_channel->mNumRotationKeys << endl;
-			duration_factor = anim->mDuration / (float)anim1->mDuration;
+			is_retarget_limb = true;
+		}
 
+		if (is_retarget_limb) {
+			animation_smoother = 1;
+			duration_factor = anim->mDuration / (float)(anim1->mDuration + animation_smoother);
 		}
 
 		index = 0;
@@ -322,15 +288,21 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 
 
 		index = (retarget_channel->mNumRotationKeys > 1) ? tick : 0;
-		aiQuaternion rotation;
+		aiQuaternion rotation = retarget_channel->mRotationKeys[index].mValue;
 
 
 
 		//make sure we actually have atleast two rotation keys
 		if (index != 0) {
-			for (int i = 1; i < retarget_channel->mNumRotationKeys; i++) {
-				if (retarget_channel->mRotationKeys[i-1].mTime * duration_factor < tick && tick <= retarget_channel->mRotationKeys[i].mTime * duration_factor) {
+			bool is_assigned = false;
+			for (int i = 1; i < (retarget_channel->mNumRotationKeys + animation_smoother); i++) {
+				if (i == retarget_channel->mNumRotationKeys and !is_assigned) {
 					index = i;
+				} else {
+					if (retarget_channel->mRotationKeys[i-1].mTime * duration_factor < tick && tick <= retarget_channel->mRotationKeys[i].mTime * duration_factor) {
+						index = i;
+						is_assigned = true;
+					}
 				}
 			}
 
@@ -338,16 +310,20 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 			aiQuaternion rotation1 = (retarget_channel->mRotationKeys[index-1]).mValue;
 			float time1 = (retarget_channel->mRotationKeys[index-1]).mTime * duration_factor;
 
-			aiQuaternion rotation2 = (retarget_channel->mRotationKeys[index]).mValue;
-			float time2 = (retarget_channel->mRotationKeys[index]).mTime * duration_factor;
+			aiQuaternion rotation2;
+			float time2;
+			if (is_retarget_limb and index == retarget_channel->mNumRotationKeys) {
+				rotation2 = (retarget_channel->mRotationKeys[0]).mValue;
+				time2 = anim->mDuration;
+			} else {
+				rotation2 = (retarget_channel->mRotationKeys[index]).mValue;
+				time2 = (retarget_channel->mRotationKeys[index]).mTime * duration_factor;
+			}
 
 			float lambda = (tick - time1) / (time2 - time1); //takes takes value 0 if tick = time1 and value 1 if tick = time2
 
 			rotation.Interpolate(rotation, rotation1, rotation2, lambda);
 		}
-
-
-
 
 		rotation_matrix3 = rotation.GetMatrix();
 		rotation_matrix = aiMatrix4x4(rotation_matrix3);
@@ -361,141 +337,52 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 
 
 
-
-void draw_mesh(const aiScene* the_scene, const aiNode* node, int node_index)
-/* Draws a mesh when given the scene object, the node object which has the mesh
- * you want to draw, and the mesh index specifying the mesh you want to draw.
- * NOTE: Humans should not be using this function, use render instead */
+void draw_dwarf()
 {
-    aiMesh* mesh;
-    aiFace* face;
-    aiMaterial* material;
-    aiColor4D diffuse;
-    int mesh_index, material_index;
+	glPushMatrix();
+		// scale the whole asset to fit into our view frustum
+		float tmp = scene_max.x - scene_min.x;
+		tmp = aisgl_max(scene_max.y - scene_min.y,tmp);
+		tmp = aisgl_max(scene_max.z - scene_min.z,tmp);
+		tmp = 1.f / tmp;
+		glScalef(tmp, tmp, tmp);
 
-    mesh_index = node->mMeshes[node_index]; //get the mesh index for this mesh
-    mesh = the_scene->mMeshes[mesh_index];  //get the actual meshes
+		float xc = (scene_min.x + scene_max.x)*0.5;
+		float yc = (scene_min.y + scene_max.y)*0.5;
+		float zc = (scene_min.z + scene_max.z)*0.5;
+		// center the model
+		glTranslatef(-xc, -yc, -zc);
 
-    material_index = mesh->mMaterialIndex;  //get the material index assigned to the mesh
-    material = the_scene->mMaterials[material_index];  //now get the actual material object using the material index
-
-    //try to get the material, and put the material into diffuse
-    if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse)) {
-        glColor4f(diffuse.r, diffuse.g, diffuse.b, 1);
-    } else {
-        glColor4fv(blue); //default colour
-    }
-
-    //now actually draw the mesh's polygons
-    for (int face_index = 0; face_index < mesh->mNumFaces; face_index++) {
-        face = &mesh->mFaces[face_index];
-        GLenum face_mode;
-
-        //select a different face mode, depending on the number of indices the face has
-        switch(face->mNumIndices) {
-            case 1: face_mode = GL_POINTS; break;
-            case 2: face_mode = GL_LINES; break;
-            case 3: face_mode = GL_TRIANGLES; break;
-            default: face_mode = GL_POLYGON; break;
-        }
-
-        if (mesh->HasTextureCoords(0)) {
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, texIdMap[material_index]); //the material index associated with a mesh relates to the
-		}
-
-        //draw the actual polygons that form the mesh
-        glBegin(face_mode);
-            for (int i = 0; i < face->mNumIndices; i++) {
-                int vertex_index = face->mIndices[i];
-
-                //if there is a colour assigned to this vertex use it
-                if (mesh->HasVertexColors(0)) {
-                    glColor4fv((GLfloat*) &mesh->mColors[0][vertex_index]);
-                }
-
-                if (mesh->HasTextureCoords(0)) {
-					glTexCoord2f(mesh->mTextureCoords[0][vertex_index].x, mesh->mTextureCoords[0][vertex_index].y);
-				}
-
-                //the mesh has vertex normals then use them
-                if (mesh->HasNormals()) {
-                    glNormal3fv(&mesh->mNormals[vertex_index].x);
-                }
-
-                glVertex3fv(&mesh->mVertices[vertex_index].x); //draw the ctual face vertex
-            }
-        glEnd();
-    }
+		transform_vertices(scene);
+		render (scene, scene->mRootNode, texIdMap);
+	glPopMatrix();
 }
-
-
-
-
-
-
-void render (const aiScene* the_scene, const aiNode* node)
-/* Traverses the scene graph (which starts at Node), and draws each mesh.
- * NOTE: Uses legacy OpenGL functions such as PushMatrix() */
-{
-    aiMatrix4x4 matrix = node->mTransformation;
-
-    aiTransposeMatrix4(&matrix); //assimp uses row-major ordering, whereas openGL uses column major ordering, so we need to convert the assimp matrix to column major
-    glPushMatrix();
-        glMultMatrixf((float*)&matrix); //multiply by the transformation matrix corresponding to this Node
-
-        //draw the meshes assigned to this node (note: we are not drawing child nodes here, only meshes assigned to this node)
-        for (int node_index = 0; node_index < node->mNumMeshes; node_index++) {
-            draw_mesh(the_scene, node, node_index);
-        }
-        //recursively draw all of this node's children
-        for (int i = 0; i < node->mNumChildren; i++) {
-            render(the_scene, node->mChildren[i]);
-        }
-
-    glPopMatrix();
-}
-
 
 
 
 void display()
 {
-    float light_position[4] = {0, 50, 50, 1};
+	float character_mid_point_height = 0.49;
+	float look_point[3] = {0, character_mid_point_height + (float)0.2, 0};
+	float camera_point[3] = {0, 1, radius};
+    float light_position[4] = {7, 5, 0, 1};
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //clear the depth and colour buffers
 
 	glMatrixMode(GL_MODELVIEW); //tell openGL we are talking about the model-view matrix now
 	glLoadIdentity();
-	gluLookAt(0, 0, kek, 0, 0, -5, 0, 1, 0); //specify camera position
+	gluLookAt(-sin(angle * (M_PI / 180))*camera_point[2] + distance_x, camera_point[1], cos(angle * (M_PI / 180)) * camera_point[2], look_point[0] + distance_x, look_point[1], look_point[2], 0, 1, 0); //specify camera position
 
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-    //glRotatef(-90, 0, 1, 0);
-    //glRotatef(90, 1, 0, 0);
+	glDisable(GL_TEXTURE_2D);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
+	draw_floor_plane(0.5, 150, 50);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, white);
+	glEnable(GL_TEXTURE_2D);
 
-    // scale the whole asset to fit into our view frustum
-	float tmp = scene_max.x - scene_min.x;
-    /*cout << scene_max.x << endl;
-    cout << scene_max.y << endl;
-    cout << scene_max.z << endl;*/
-
-	tmp = aisgl_max(scene_max.y - scene_min.y,tmp);
-	tmp = aisgl_max(scene_max.z - scene_min.z,tmp);
-	tmp = 1.f / tmp;
-    glTranslatef(0, -0.5, 0);
-    //glScalef(1.21, 1.21, 1.21);
-	glScalef(tmp, tmp, tmp);
-
-    float xc = (scene_min.x + scene_max.x)*0.5;
-	float yc = (scene_min.y + scene_max.y)*0.5;
-	float zc = (scene_min.z + scene_max.z)*0.5;
-	// center the model
-	glTranslatef(-xc, -yc, -zc);
-
-	transform_vertices(scene);
-    render(scene, scene->mRootNode);
-
-    //glutSolidTeapot(1);
+	glTranslatef(distance_x, character_mid_point_height, 0);
+	glRotatef(90, 0, 1, 0);
+	draw_dwarf();
 
     glutSwapBuffers();
 }
@@ -509,11 +396,9 @@ void loadModel(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	//printBoneInfo(scene);
 	printAnimInfo(scene);
     get_bounding_box(scene, &scene_min, &scene_max);
 	animation_duration1 = scene->mAnimations[0]->mDuration;
-	//duration_factor = (float)desired_animation_duration / animation_duration;
 }
 
 
@@ -527,25 +412,55 @@ void load_animation(const char* filename)
     }
 	printMeshInfo(animation);
 	printAnimInfo(animation);
-    //get_bounding_box(scene, &scene_min, &scene_max);
 	animation_duration2 = animation->mAnimations[0]->mDuration;
-	//duration_factor = (float)desired_animation_duration / animation_duration;
 }
 
 
 void update_animation (int value)
 {
 	if (current_tick < animation_duration1 * duration_factor) {
-		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
 		glutTimerFunc(time_step, update_animation, 0);
 		current_tick++;
 	} else {
 		current_tick = 1;
-		//update_node_matrices(current_tick, scene->mAnimations[0]);
-		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
 		glutTimerFunc(time_step, update_animation, 0);
 	}
+
+	if (is_retarget_enabled) {
+		distance_x += 0.013;
+		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
+	} else {
+		update_node_matrices(current_tick, scene->mAnimations[0]);
+	}
+
 	glutPostRedisplay();
+}
+
+
+
+void change_animation(unsigned char key, int x, int y)
+{
+	if (key == '1') {
+		is_retarget_enabled = false;
+	} else if (key == '2') {
+		is_retarget_enabled = true;
+	}
+}
+
+
+
+void move_camera(int key, int x, int y)
+{
+	if (key == GLUT_KEY_UP) {
+		radius -= 0.2;
+	} else if (key == GLUT_KEY_DOWN) {
+		radius += 0.2;
+	} else if (key == GLUT_KEY_RIGHT) {
+		angle += 2;
+	} else if (key == GLUT_KEY_LEFT) {
+		angle -= 2;
+	}
+	//glutPostRedisplay(); No need for this, will just update with the animation
 }
 
 
@@ -575,23 +490,12 @@ void initialise()
     loadModel("dwarf.x");
 	load_animation("avatar_walk.bvh");
     loadGLTextures(scene);
-	initialise_transform_vertices(scene);
+	initial_meshes = initialise_transform_vertices(scene);
 
     //set up the projection matrix
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluPerspective(35, 1, 1.0, 1000.0);
-}
-
-
-void test(unsigned char key, int x, int y)
-{
-    if (key == 'w') {
-        kek += 0.1;
-    } else if (key == 's') {
-        kek -= 0.1;
-    }
-    glutPostRedisplay();
 }
 
 
@@ -606,8 +510,9 @@ int main(int argc, char** argv)
 
     initialise();
     glutDisplayFunc(display);
-    glutKeyboardFunc(test);
 	glutTimerFunc(time_step, update_animation, 0);
+	glutSpecialFunc(move_camera);
+	glutKeyboardFunc(change_animation);
     glutMainLoop();
     aiReleaseImport(scene);
 }

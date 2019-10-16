@@ -8,9 +8,10 @@
 #include <iostream>
 #include <string>
 using namespace std;
-#include "assimp_extras.h"
+#include "./../assimp_extras.h"
 #include "./../initial_meshes.h"
 #include "./../render_scene.h"
+#include "./../floor_plane.h"
 
 
 InitialMesh* initial_meshes = NULL;
@@ -98,32 +99,6 @@ void loadGLTextures(const aiScene* scene)
 			}
 		}
 	}  //loop for material
-}
-
-
-void draw_floor_plane(float square_size, int num_squares_x, int num_squares_z)
-/* Takes a square size float, the number of squares in the x direction, and the
- * number of squares in the z direction. Draws a floor plane along the x,z axes */
-{
-	glPushMatrix();
-		glTranslatef(-(num_squares_x*square_size)/2, 0, -(num_squares_z*square_size)/2);
-		glBegin(GL_QUADS);
-			for (int i = 0; i < num_squares_x; i++) {
-				for (int j = 0; j < num_squares_z; j++) {
-					if ((i + j) % 2 == 0) {
-						glColor3f(0.9, 0, 0.9);
-					} else {
-						glColor3f(0, 0.9, 0.9);
-					}
-					glNormal3f(0, 1, 0);
-					glVertex3f(square_size*i, 0, square_size*j);
-					glVertex3f(square_size*(i+1), 0, square_size*j);
-					glVertex3f(square_size*(i+1), 0, square_size*(j+1));
-					glVertex3f(square_size*(i), 0, square_size*(j+1));
-				}
-			}
-		glEnd();
-	glPopMatrix();
 }
 
 
@@ -253,7 +228,7 @@ void draw_army_pilot()
 void display()
 {
 	float character_mid_point_height = 0.36;
-    float light_position[4] = {0, 4, 20, 1};
+    float light_position[4] = {0, 5, 7, 1};
 	float look_point[3] = {0, character_mid_point_height + (float)0.2, 0};
 	float camera_point[3] = {0, 1, radius};
 
