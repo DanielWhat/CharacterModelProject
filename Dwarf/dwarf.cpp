@@ -25,6 +25,7 @@ float blue[4] = {0, 0, 1, 1};
 aiVector3D scene_min, scene_max, scene_center;
 
 std::map<int, int>texIdMap;
+std::map<string, int> retarget_map;
 
 //animation globals
 int animation_duration1;
@@ -233,7 +234,7 @@ void update_node_matrices(int tick, aiAnimation* anim)
 
 
 
-void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation* anim1)
+void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation* anim1, std::map<string, int> retarg_map)
 {
 	int index;
 	aiMatrix4x4 position_matrix, position_matrix1, position_matrix2, rotation_matrix, final_transformation_matrix;
@@ -252,30 +253,12 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 		bool is_retarget_limb = false;
 		int animation_smoother = 0;
 
-		if (string(original_channel->mNodeName.C_Str()) == "rknee") {
-			retarget_channel = anim1->mChannels[19];
-			is_retarget_limb = true;
-
-		} else if (string(original_channel->mNodeName.C_Str()) == "rankle") {
-			retarget_channel = anim1->mChannels[20];
-			is_retarget_limb = true;
-
-		} else if (string(original_channel->mNodeName.C_Str()) == "rhip") {
-			retarget_channel = anim1->mChannels[18];
-			is_retarget_limb = true;
-
-		} else if (string(original_channel->mNodeName.C_Str()) == "lknee") {
-			retarget_channel = anim1->mChannels[16];
-			is_retarget_limb = true;
-
-		} else if (string(original_channel->mNodeName.C_Str()) == "lankle") {
-			retarget_channel = anim1->mChannels[17];
-			is_retarget_limb = true;
-
-		} else if (string(original_channel->mNodeName.C_Str()) == "lhip") {
-			retarget_channel = anim1->mChannels[15];
+		//see if we need to retarget this node
+		if(retarg_map.find(string(original_channel->mNodeName.C_Str())) != retarg_map.end()) {
+			retarget_channel = anim1->mChannels[retarg_map[string(original_channel->mNodeName.C_Str())]]; //retarget to a different animation
 			is_retarget_limb = true;
 		}
+
 
 		if (is_retarget_limb) {
 			animation_smoother = 1;
@@ -289,7 +272,6 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 
 		index = (retarget_channel->mNumRotationKeys > 1) ? tick : 0;
 		aiQuaternion rotation = retarget_channel->mRotationKeys[index].mValue;
-
 
 
 		//make sure we actually have atleast two rotation keys
@@ -312,7 +294,7 @@ void update_node_matrices_with_retarget(int tick, aiAnimation* anim, aiAnimation
 
 			aiQuaternion rotation2;
 			float time2;
-			if (is_retarget_limb and index == retarget_channel->mNumRotationKeys) {
+			if (is_retarget_limb && index == retarget_channel->mNumRotationKeys) {
 				rotation2 = (retarget_channel->mRotationKeys[0]).mValue;
 				time2 = anim->mDuration;
 			} else {
@@ -396,7 +378,6 @@ void loadModel(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	printAnimInfo(scene);
     get_bounding_box(scene, &scene_min, &scene_max);
 	animation_duration1 = scene->mAnimations[0]->mDuration;
 }
@@ -410,7 +391,6 @@ void load_animation(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	printMeshInfo(animation);
 	printAnimInfo(animation);
 	animation_duration2 = animation->mAnimations[0]->mDuration;
 }
@@ -428,7 +408,7 @@ void update_animation (int value)
 
 	if (is_retarget_enabled) {
 		distance_x += 0.013;
-		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0]);
+		update_node_matrices_with_retarget(current_tick, scene->mAnimations[0], animation->mAnimations[0], retarget_map);
 	} else {
 		update_node_matrices(current_tick, scene->mAnimations[0]);
 	}
@@ -496,6 +476,14 @@ void initialise()
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluPerspective(35, 1, 1.0, 1000.0);
+
+	//set up the retarget map
+	retarget_map["lhip"] = 15;
+	retarget_map["lknee"] = 16;
+	retarget_map["lankle"] = 17;
+	retarget_map["rhip"] = 18;
+	retarget_map["rknee"] = 19;
+	retarget_map["rankle"] = 20;
 }
 
 

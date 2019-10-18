@@ -209,8 +209,7 @@ void update_node_matrices(float tick, aiAnimation* anim)
 		rotation_matrix3 = rotation.GetMatrix();
 		rotation_matrix = aiMatrix4x4(rotation_matrix3);
 
-		if (channel_index
-			 != 23) {
+		if (channel_index != 23) {
 			final_transformation_matrix = position_matrix * rotation_matrix;
 		} else {
 			final_transformation_matrix = rotation_matrix;
@@ -316,6 +315,7 @@ void load_animation(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
+	//printAnimInfo(animation);
 	animation_duration = animation->mAnimations[0]->mDuration;
 }
 
