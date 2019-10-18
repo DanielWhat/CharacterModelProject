@@ -492,7 +492,7 @@ int main(int argc, char** argv)
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH); //initialise the window with RGB colours, a double buffer for smoother animations, and a depth buffer
     glutInitWindowSize(600, 600);
-    glutCreateWindow("Army Pilot");
+    glutCreateWindow("Dwarf");
     glutInitContextVersion(4, 2);
     glutInitContextProfile(GLUT_CORE_PROFILE);
 
