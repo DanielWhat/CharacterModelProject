@@ -391,7 +391,7 @@ void load_animation(const char* filename)
     if (scene == NULL) {
         exit(1);
     }
-	printAnimInfo(animation);
+	//printAnimInfo(animation);
 	animation_duration2 = animation->mAnimations[0]->mDuration;
 }
 
